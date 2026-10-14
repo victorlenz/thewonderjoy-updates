@@ -31,7 +31,7 @@ import {
 } from '../../test-support/manifest-fixtures.mjs';
 import { findProblems } from '../src/checks.mjs';
 
-const MANIFEST_URL = 'https://updates.thewonderjoy.com/gazefix/manifest/v1/manifest.json';
+const MANIFEST_URL = 'https://updates.thewonderjoy.com/gazefix/sdk/v1/manifest.json';
 const NVIDIA_PAGE_URL = 'https://www.nvidia.com/broadcast-sdk-resources';
 const FFMPEG_VERSION_URL = 'https://www.gyan.dev/ffmpeg/builds/release-version';
 const AR_BASE = 'https://international.download.nvidia.com/Windows/broadcast/sdk/AR/';

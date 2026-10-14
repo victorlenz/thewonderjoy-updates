@@ -8,7 +8,7 @@ compatibility_date = "2025-09-01"
 crons = ["0 * * * *"]
 
 [vars]
-MANIFEST_URL = "https://updates.thewonderjoy.com/gazefix/manifest/v1/manifest.json"
+MANIFEST_URL = "https://updates.thewonderjoy.com/gazefix/sdk/v1/manifest.json"
 
 [[kv_namespaces]]
 binding = "STATE"

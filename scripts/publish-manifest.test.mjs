@@ -90,7 +90,7 @@ test('P2: a source missing ffmpeg builds a manifest that section 3 rejects (what
 // ---- P1: the committed signed manifest matches its source -------------------------------------
 
 test('P1: site manifest verifies with keys/public-keys.json and equals {format, serial, publishedAt, ...source}', async () => {
-  const result = await readEnvelope(readRepoFile('site/gazefix/manifest/v1/manifest.json'), REAL_PUBLIC_KEYS);
+  const result = await readEnvelope(readRepoFile('site/gazefix/sdk/v1/manifest.json'), REAL_PUBLIC_KEYS);
   assert.equal(result.errors, undefined, JSON.stringify(result.errors));
   const { format, serial, publishedAt, ...rest } = result.manifest;
   assert.equal(format, 1);

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Signs and writes site/gazefix/manifest/v1/manifest.json from manifest-source/gazefix.json (see README).
+// Signs and writes site/gazefix/sdk/v1/manifest.json from manifest-source/gazefix.json (see README).
 // Usage: node scripts/publish-manifest.mjs [--key main-2026] [--full] [--offline] [--dry-run]
 //   --key       which private key signs (default main-2026), read from <keys dir>/<key>.private.pem;
 //               keys dir = THEWONDERJOY_KEYS_DIR, else %USERPROFILE%\.thewonderjoy\keys
@@ -20,7 +20,7 @@ import { checkDownloads, createNetwork } from './download-checks.mjs';
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCE_FILE = path.join(REPO_ROOT, 'manifest-source', 'gazefix.json');
 const PUBLIC_KEYS_FILE = path.join(REPO_ROOT, 'keys', 'public-keys.json');
-const MANIFEST_SITE_PATH = 'gazefix/manifest/v1/manifest.json';
+const MANIFEST_SITE_PATH = 'gazefix/sdk/v1/manifest.json';
 const SITE_FILE = path.join(REPO_ROOT, 'site', ...MANIFEST_SITE_PATH.split('/'));
 const LIVE_URL = `${PUBLISHED_SITE_URL}/${MANIFEST_SITE_PATH}`;
 const APP_BUILT_IN_MANIFEST = 'D:\\Work\\gaze\\app\\src\\GazeFix.Core\\Setup\\BuiltInManifest.json';

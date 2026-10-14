@@ -25,14 +25,14 @@ const SAMPLE_PAGE = `
 // ---- C1: the committed signed manifest --------------------------------------------------------
 
 test('C1: the committed site manifest verifies with keys/public-keys.json and passes every rule', async () => {
-  const text = await readFile(new URL('../site/gazefix/manifest/v1/manifest.json', import.meta.url), 'utf8');
+  const text = await readFile(new URL('../site/gazefix/sdk/v1/manifest.json', import.meta.url), 'utf8');
   const result = await readEnvelope(text, REAL_PUBLIC_KEYS);
   assert.equal(result.errors, undefined, JSON.stringify(result.errors));
   assert.ok(result.serial >= 1);
 });
 
 test('C4/C5: the installer urls of the committed manifest count as known on the NVIDIA page', async () => {
-  const text = await readFile(new URL('../site/gazefix/manifest/v1/manifest.json', import.meta.url), 'utf8');
+  const text = await readFile(new URL('../site/gazefix/sdk/v1/manifest.json', import.meta.url), 'utf8');
   const { manifest } = await readEnvelope(text, REAL_PUBLIC_KEYS);
   const manifestUrls = manifest.nvidiaArSdk.installers.flatMap((installer) => installer.urls);
   assert.deepEqual(findNewLinks(extractInstallerLinks(SAMPLE_PAGE), [...manifestUrls, KNOWN_OTHER]), [BRAND_NEW]);

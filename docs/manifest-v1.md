@@ -2,11 +2,11 @@
 
 GazeFix reads one signed file at startup and does what it says:
 
-    https://updates.thewonderjoy.com/gazefix/manifest/v1/manifest.json
+    https://updates.thewonderjoy.com/gazefix/sdk/v1/manifest.json
 
 This document is the contract between this repo (which writes and checks the file) and the GazeFix app
 (which reads it). **Version 1 never changes in a way that breaks apps already sold.** New optional fields may be
-added (apps ignore fields they do not know). Anything incompatible gets a new path (`.../manifest/v2/...`), and the
+added (apps ignore fields they do not know). Anything incompatible gets a new path (`.../sdk/v2/...`), and the
 v1 file keeps being published for old apps.
 
 ## 1. The envelope (what is served)

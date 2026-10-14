@@ -6,9 +6,9 @@ Update metadata for apps by The Wonder Joy. The files are hosted on the owner's 
 
 The first app is **GazeFix**. At startup GazeFix reads one signed file, the **manifest**:
 
-https://updates.thewonderjoy.com/gazefix/manifest/v1/manifest.json
+https://updates.thewonderjoy.com/gazefix/sdk/v1/manifest.json
 
-(file in this repo: `site/gazefix/manifest/v1/manifest.json`)
+(file in this repo: `site/gazefix/sdk/v1/manifest.json`)
 
 It tells GazeFix where to download NVIDIA's AR SDK installer for the user's GPU and FFmpeg, with the size and SHA-256
 of each file. If a download moves, publishing a new manifest fixes every copy of GazeFix already sold. No app update
@@ -22,7 +22,7 @@ fields, and the rules. Version 1 never changes in a way that breaks sold apps.
 | Path | What it is |
 | --- | --- |
 | `manifest-source/gazefix.json` | The manifest you edit: everything except `format`, `serial` and `publishedAt`. |
-| `site/gazefix/manifest/v1/manifest.json` | The signed manifest (written by the publish script, never by hand). |
+| `site/gazefix/sdk/v1/manifest.json` | The signed manifest (written by the publish script, never by hand). |
 | `keys/public-keys.json` | The public keys apps trust (`main-2026`, `backup-2026`). |
 | `shared/manifest.mjs` | Reading, verifying and signing the manifest, and the rules. One definition, used everywhere. |
 | `shared/upstream-watch.mjs` | The website URL and the upstream pages that are watched (NVIDIA's page, gyan.dev's FFmpeg version). |
@@ -50,14 +50,14 @@ fields, and the rules. Version 1 never changes in a way that breaks sold apps.
      the FFmpeg release asset (when GitHub's rate limit is hit, this is only a warning). Any wrong link → exit 1,
      nothing written;
    - signs with `%USERPROFILE%\.thewonderjoy\keys\main-2026.private.pem`, checks the result with
-     `keys/public-keys.json`, and writes `site/gazefix/manifest/v1/manifest.json`.
+     `keys/public-keys.json`, and writes `site/gazefix/sdk/v1/manifest.json`.
 
    Options: `--full` also downloads every URL and compares its SHA-256 (about 5.5 GB, nothing saved).
    `--offline` skips the live serial and the link check. `--dry-run` prints the manifest and its serial and signs and
    writes nothing. `--key backup-2026` signs with another key. `THEWONDERJOY_KEYS_DIR` points to another keys folder.
 3. Commit and push. The workflow checks the new file (with downloads).
-4. Upload `site/gazefix/manifest/v1/manifest.json` to the server so it is served at
-   https://updates.thewonderjoy.com/gazefix/manifest/v1/manifest.json. Within an hour the Worker posts
+4. Upload `site/gazefix/sdk/v1/manifest.json` to the server so it is served at
+   https://updates.thewonderjoy.com/gazefix/sdk/v1/manifest.json. Within an hour the Worker posts
    "Manifest updated: serial A → B" on Slack.
 5. Copy the same file to the app, `D:\Work\gaze\app\src\GazeFix.Core\Setup\BuiltInManifest.json`, before the next
    GazeFix build (the app uses it until it has read a newer one online).
@@ -164,8 +164,8 @@ NVIDIA installer or FFmpeg release". Pull-request runs never create issues.
 ## One-time setup
 
 1. Push this repo to GitHub (public).
-2. Upload `site/gazefix/manifest/v1/manifest.json` to the server and check that
-   https://updates.thewonderjoy.com/gazefix/manifest/v1/manifest.json shows it.
+2. Upload `site/gazefix/sdk/v1/manifest.json` to the server and check that
+   https://updates.thewonderjoy.com/gazefix/sdk/v1/manifest.json shows it.
 3. In GitHub: Settings → Secrets and variables → Actions → Variables → add `LIVE_CHECK` = `true`. Until then the
    workflow skips the live-file check.
 4. Set up the hourly Worker (see "Hourly check" above).
