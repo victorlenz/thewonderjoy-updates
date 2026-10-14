@@ -3,3 +3,4 @@ report.md
 *.report.md
 link-report*.md
 worker/.wrangler/
+worker/.dev.vars

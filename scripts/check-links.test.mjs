@@ -32,6 +32,7 @@ function validInstaller(overrides = {}) {
     url: LISTED,
     sizeBytes: 1330863768,
     sha256: '0e2e1110065ed58b9c4a844c674fe5f50ed5fe37a0d170bd229a4bbc48861ca5',
+    md5: 'd14abd6c8f4b9246e4082d84f8e1895e',
     ...overrides,
   };
 }

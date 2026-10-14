@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Checks the installer lists in site/ and the NVIDIA links they point to.
 //
-//   node scripts/check-links.mjs              quick daily check
+//   node scripts/check-links.mjs              quick check (sizes and ETag md5 from HEAD requests)
 //   node scripts/check-links.mjs --full       also download every installer and check its SHA-256
 //   node scripts/check-links.mjs --skip-live  do not compare with the published copy on the website
 //
@@ -14,6 +14,10 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
+import { MAX_LIST_BYTES, md5FromEtag, validateList } from '../shared/installer-list.mjs';
+
+export { validateList };
+
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SITE_DIR = path.join(REPO_ROOT, 'site');
 const KNOWN_OTHER_LINKS_FILE = path.join(REPO_ROOT, 'scripts', 'known-other-links.txt');
@@ -22,14 +26,6 @@ const LIST_FILE_NAME = 'installers.json';
 const PUBLISHED_SITE_URL = 'https://updates.thewonderjoy.com';
 const NVIDIA_PAGE_URL = 'https://www.nvidia.com/broadcast-sdk-resources';
 const INSTALLER_LINK_PATTERN = /https?:\/\/[^"'\s<>]*nvidia_ar_sdk_installer[^"'\s<>]*\.exe/gi;
-
-// The rules below are the ones GazeFix applies when it reads a list (format 1). Never loosen them.
-const LIST_FORMAT = 1;
-const MAX_LIST_BYTES = 1024 * 1024;
-const ARCHITECTURES = ['turing', 'ampere', 'ada', 'blackwell'];
-const TRUSTED_HOST = 'nvidia.com';
-const SAFE_FILE_NAME = /^[A-Za-z0-9._-]+\.exe$/;
-const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36';
@@ -51,7 +47,7 @@ async function main() {
 
   const lists = await loadAllLists(findings);
   const allListsValid = findings.failures.length === 0;
-  await checkInstallerSizes(lists, findings);
+  await checkInstallerHeaders(lists, findings);
   if (options.full) await checkInstallerHashes(lists, findings);
   if (options.skipLive) findings.notes.push('Live check skipped (--skip-live).');
   else await checkPublishedCopies(lists, findings);
@@ -136,111 +132,50 @@ function toSitePath(file) {
   return path.relative(SITE_DIR, file).split(path.sep).join('/');
 }
 
-/** Returns a list of human-readable problems; an empty array means the list is valid. */
-export function validateList(data) {
-  if (!isPlainObject(data)) return ['top level must be a JSON object'];
-  const errors = [];
-  if (data.format !== LIST_FORMAT) errors.push(`"format" must be ${LIST_FORMAT}, found ${JSON.stringify(data.format)}`);
-  if (!Array.isArray(data.installers)) return [...errors, '"installers" must be an array'];
-  if (data.installers.length === 0) errors.push('"installers" is empty');
-  data.installers.forEach((installer, index) => {
-    const label = `installers[${index}]`;
-    errors.push(...validateInstaller(installer).map((error) => `${label}: ${error}`));
-  });
-  errors.push(...duplicateArchitectureErrors(data.installers));
-  return errors;
-}
-
-function validateInstaller(installer) {
-  if (!isPlainObject(installer)) return ['must be a JSON object'];
-  const errors = [];
-  if (!ARCHITECTURES.includes(installer.architecture)) {
-    errors.push(`"architecture" must be one of ${ARCHITECTURES.join('/')}, found ${JSON.stringify(installer.architecture)}`);
-  }
-  errors.push(...urlErrors(installer.url));
-  if (!Number.isSafeInteger(installer.sizeBytes) || installer.sizeBytes <= 0) {
-    errors.push(`"sizeBytes" must be a positive whole number, found ${JSON.stringify(installer.sizeBytes)}`);
-  }
-  if (typeof installer.sha256 !== 'string' || !SHA256_HEX.test(installer.sha256)) {
-    errors.push(`"sha256" must be 64 lowercase hex characters, found ${JSON.stringify(installer.sha256)}`);
-  }
-  return errors;
-}
-
-function urlErrors(url) {
-  const parsed = parseAbsoluteUrl(url);
-  if (!parsed) return [`"url" must be an absolute URL, found ${JSON.stringify(url)}`];
-  const errors = [];
-  if (parsed.protocol !== 'https:') errors.push(`"url" must use https: ${url}`);
-  if (!isTrustedHost(parsed.hostname)) errors.push(`"url" must be on ${TRUSTED_HOST} or a subdomain: ${url}`);
-  if (!SAFE_FILE_NAME.test(fileNameOf(parsed))) {
-    errors.push(`"url" file name must match ${SAFE_FILE_NAME}: ${url}`);
-  }
-  return errors;
-}
-
-function parseAbsoluteUrl(url) {
-  if (typeof url !== 'string') return undefined;
-  try {
-    return new URL(url);
-  } catch {
-    return undefined;
-  }
-}
-
-function isTrustedHost(hostname) {
-  const host = hostname.toLowerCase();
-  return host === TRUSTED_HOST || host.endsWith(`.${TRUSTED_HOST}`);
-}
-
-function fileNameOf(parsedUrl) {
-  return parsedUrl.pathname.split('/').pop();
-}
-
-function duplicateArchitectureErrors(installers) {
-  const seen = new Set();
-  const errors = [];
-  for (const installer of installers) {
-    const architecture = installer?.architecture;
-    if (typeof architecture !== 'string') continue;
-    if (seen.has(architecture)) errors.push(`architecture "${architecture}" is listed more than once`);
-    seen.add(architecture);
-  }
-  return errors;
-}
-
-function isPlainObject(value) {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 // ---------------------------------------------------------------------------------------------------------------
-// (b) Size check with HEAD (or a one-byte ranged GET)
+// (b) Size and ETag md5 check with HEAD (or a one-byte ranged GET)
 
-async function checkInstallerSizes(lists, findings) {
+async function checkInstallerHeaders(lists, findings) {
   for (const { sitePath, installer } of allInstallers(lists)) {
     const label = `${sitePath} ${installer.architecture}`;
     try {
-      const size = await withRetries(() => fetchRemoteSize(installer.url));
-      if (size === installer.sizeBytes) log(`OK    ${label}: ${size} bytes`);
-      else findings.failures.push(`${label}: size is ${size}, list says ${installer.sizeBytes} (${installer.url})`);
+      const remote = await withRetries(() => fetchRemoteFileInfo(installer.url));
+      const mismatches = headerMismatches(remote, installer);
+      if (mismatches.length === 0) log(`OK    ${label}: ${remote.size} bytes, md5 ${remote.md5}`);
+      else findings.failures.push(...mismatches.map((mismatch) => `${label}: ${mismatch} (${installer.url})`));
     } catch (error) {
       findings.failures.push(`${label}: ${error.message} (${installer.url})`);
     }
   }
 }
 
+function headerMismatches(remote, installer) {
+  const mismatches = [];
+  if (remote.size !== installer.sizeBytes) mismatches.push(`size is ${remote.size}, list says ${installer.sizeBytes}`);
+  if (remote.md5 === undefined) mismatches.push(`server sent no md5 in its ETag (${JSON.stringify(remote.etag)})`);
+  else if (remote.md5 !== installer.md5) mismatches.push(`ETag md5 is ${remote.md5}, list says ${installer.md5}`);
+  return mismatches;
+}
+
 function allInstallers(lists) {
   return lists.flatMap(({ sitePath, data }) => data.installers.map((installer) => ({ sitePath, installer })));
 }
 
-async function fetchRemoteSize(url) {
+async function fetchRemoteFileInfo(url) {
   const head = await fetchWithTimeout(url, { method: 'HEAD' });
-  if (head.status === 200) return requireNumber(head.headers.get('content-length'), 'Content-Length', url);
+  if (head.status === 200) return fileInfo(head, requireNumber(head.headers.get('content-length'), 'Content-Length', url));
   const ranged = await fetchWithTimeout(url, { headers: { Range: 'bytes=0-0' } });
   await ranged.body?.cancel();
-  if (ranged.status === 206) return requireNumber(totalFromContentRange(ranged.headers.get('content-range')), 'Content-Range', url);
-  if (ranged.status === 200) return requireNumber(ranged.headers.get('content-length'), 'Content-Length', url);
+  if (ranged.status === 206) {
+    return fileInfo(ranged, requireNumber(totalFromContentRange(ranged.headers.get('content-range')), 'Content-Range', url));
+  }
+  if (ranged.status === 200) return fileInfo(ranged, requireNumber(ranged.headers.get('content-length'), 'Content-Length', url));
   throw new Error(`HTTP ${head.status} on HEAD and ${ranged.status} on ranged GET`);
+}
+
+function fileInfo(response, size) {
+  const etag = response.headers.get('etag');
+  return { size, etag, md5: md5FromEtag(etag) };
 }
 
 /** "bytes 0-0/1324834184" -> "1324834184" */
@@ -453,7 +388,7 @@ function describeNetworkError(error) {
 // Report
 
 export function buildReport(options, findings) {
-  const mode = options.full ? 'full (sizes + SHA-256 downloads)' : 'quick (sizes only)';
+  const mode = options.full ? 'full (sizes, ETag md5 + SHA-256 downloads)' : 'quick (sizes and ETag md5)';
   const lines = [`# Installer link check`, '', `- Time: ${new Date().toISOString()}`, `- Mode: ${mode}`];
   lines.push(`- Result: ${resultSummary(findings)}`, '');
   lines.push(...section('Broken', findings.failures));

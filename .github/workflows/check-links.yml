@@ -2,18 +2,20 @@ name: Check installer links
 
 on:
   schedule:
-    - cron: "0 6 * * *"   # daily quick check (sizes only)
+    - cron: "0 6 * * *"   # daily quick check (sizes and ETag md5)
     - cron: "0 7 * * 1"   # weekly full check (downloads and hash-checks every installer)
   push:
     branches: [main]
     paths:
       - "site/**"
       - "scripts/**"
+      - "shared/**"
       - ".github/workflows/check-links.yml"
   pull_request:
     paths:
       - "site/**"
       - "scripts/**"
+      - "shared/**"
       - ".github/workflows/check-links.yml"
   workflow_dispatch:
     inputs:
@@ -49,7 +51,7 @@ jobs:
           node-version: 20
 
       - name: Unit tests
-        run: node --test scripts/check-links.test.mjs
+        run: node --test scripts/check-links.test.mjs worker/test/checks.test.mjs worker/test/alerts.test.mjs worker/test/shared-rules.test.mjs
 
       - name: Check links
         id: check

@@ -1,6 +1,7 @@
 // When to tell Slack: only when the set of problems changes, plus a daily reminder while problems remain.
 
 export const REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const MESSAGE_HEADING = 'GazeFix installer check:';
 
 /**
  * @typedef {{ problems: string[], lastAlertAt: string | null }} CheckState  (stored between runs; ISO time)
@@ -17,7 +18,47 @@ export const REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000;
  * @returns {{ message: string | null, nextState: CheckState }}
  */
 export function decideAlert(previous, problems, now) {
-  throw new Error('not implemented');
+  const sortedProblems = [...problems].sort();
+  const message = messageFor(previous, sortedProblems, now);
+  const lastAlertAt = message === null ? (previous?.lastAlertAt ?? null) : now.toISOString();
+  return { message, nextState: { problems: sortedProblems, lastAlertAt } };
+}
+
+function messageFor(previous, problems, now) {
+  const hasProblems = problems.length > 0;
+  if (previous === undefined) return hasProblems ? brokenMessage(problems) : null;
+  if (!haveSameProblems(previous.problems, problems)) return hasProblems ? brokenMessage(problems) : fixedMessage();
+  if (hasProblems && isReminderDue(previous.lastAlertAt, now)) return stillBrokenMessage(problems);
+  return null;
+}
+
+function haveSameProblems(previousProblems, sortedProblems) {
+  const previousSorted = [...previousProblems].sort();
+  return (
+    previousSorted.length === sortedProblems.length &&
+    previousSorted.every((problem, index) => problem === sortedProblems[index])
+  );
+}
+
+function isReminderDue(lastAlertAt, now) {
+  if (lastAlertAt === null) return true;
+  return now.getTime() - Date.parse(lastAlertAt) >= REMINDER_INTERVAL_MS;
+}
+
+function brokenMessage(problems) {
+  return [`${MESSAGE_HEADING} ${problems.length} problem(s) found`, ...bulleted(problems)].join('\n');
+}
+
+function stillBrokenMessage(problems) {
+  return [`${MESSAGE_HEADING} still broken, ${problems.length} problem(s)`, ...bulleted(problems)].join('\n');
+}
+
+function fixedMessage() {
+  return `${MESSAGE_HEADING} fixed, everything is OK again`;
+}
+
+function bulleted(problems) {
+  return problems.map((problem) => `• ${problem}`);
 }
 
 /**
@@ -28,5 +69,10 @@ export function decideAlert(previous, problems, now) {
  * @param {string} text
  */
 export async function sendSlack(fetchFn, webhookUrl, text) {
-  throw new Error('not implemented');
+  const response = await fetchFn(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!response.ok) throw new Error(`Slack answered HTTP ${response.status}: ${await response.text()}`);
 }
