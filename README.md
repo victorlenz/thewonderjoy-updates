@@ -10,7 +10,8 @@ https://updates.thewonderjoy.com/gazefix/sdk/v1/installers.json
 
 (file in this repo: `site/gazefix/sdk/v1/installers.json`)
 
-If an NVIDIA download moves, fixing this file fixes every copy of GazeFix already sold. No app update is needed.
+If an NVIDIA download moves (to another address on nvidia.com), fixing this file fixes every copy of GazeFix already
+sold. No app update is needed.
 
 ## The list format (format 1)
 
