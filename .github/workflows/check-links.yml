@@ -1,26 +1,30 @@
-name: Check installer links
+name: Check the GazeFix manifest
 
 on:
   schedule:
     - cron: "0 6 * * *"   # daily quick check (sizes and ETag md5)
-    - cron: "0 7 * * 1"   # weekly full check (downloads and hash-checks every installer)
+    - cron: "0 7 * * 1"   # weekly full check (downloads and hash-checks every url)
   push:
     branches: [main]
     paths:
       - "site/**"
       - "scripts/**"
       - "shared/**"
+      - "keys/**"
+      - "manifest-source/**"
       - ".github/workflows/check-links.yml"
   pull_request:
     paths:
       - "site/**"
       - "scripts/**"
       - "shared/**"
+      - "keys/**"
+      - "manifest-source/**"
       - ".github/workflows/check-links.yml"
   workflow_dispatch:
     inputs:
       full:
-        description: "Download every installer and check its SHA-256 (about 5.3 GB)"
+        description: "Download every url and check its SHA-256 (about 5.5 GB)"
         type: boolean
         default: false
 
@@ -36,7 +40,7 @@ env:
   WEEKLY_FULL_CRON: "0 7 * * 1"
   BROKEN_TITLE: "Installer links are broken"
   BROKEN_LABEL: "link-check"
-  NEW_TITLE: "NVIDIA published installers we don't list"
+  NEW_TITLE: "News: a new NVIDIA installer or FFmpeg release"
   NEW_LABEL: "new-installer"
 
 jobs:
@@ -51,19 +55,21 @@ jobs:
           node-version: 20
 
       - name: Unit tests
-        run: node --test scripts/check-links.test.mjs worker/test/checks.test.mjs worker/test/alerts.test.mjs worker/test/shared-rules.test.mjs
+        run: node --test shared/manifest.test.mjs scripts/publish-manifest.test.mjs worker/test/checks.test.mjs worker/test/alerts.test.mjs scripts/check-links.test.mjs
 
       - name: Check links
         id: check
         env:
           REPORT_PATH: ${{ runner.temp }}/report.md
-          # A changed list (push / pull request) must be proven by downloading and hashing it.
+          # A changed manifest (push / pull request) must be proven by downloading and hashing every url.
           FULL: >-
             ${{ github.event_name == 'push'
              || github.event_name == 'pull_request'
              || (github.event_name == 'schedule' && github.event.schedule == env.WEEKLY_FULL_CRON)
              || (github.event_name == 'workflow_dispatch' && inputs.full) }}
           LIVE_CHECK: ${{ vars.LIVE_CHECK }}
+          # Lifts the GitHub API rate limit for the FFmpeg release digest check (60/hour unauthenticated).
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           args=()
           if [ "$FULL" = "true" ]; then args+=(--full); fi
@@ -108,7 +114,7 @@ jobs:
           close_if_open() { # label title
             number="$(open_issue_number "$1" "$2")"
             if [ -n "$number" ]; then
-              gh issue close "$number" --comment "All installer links are fine again. Run: $RUN_URL"
+              gh issue close "$number" --comment "All download links are fine again. Run: $RUN_URL"
             fi
           }
 
@@ -123,5 +129,5 @@ jobs:
       - name: Fail the job when links are broken
         if: steps.check.outputs.exit_code == '1'
         run: |
-          echo "::error::Installer links are broken. See the report in the job summary."
+          echo "::error::The manifest or its download links are broken. See the report in the job summary."
           exit 1

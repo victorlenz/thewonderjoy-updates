@@ -1,4 +1,4 @@
-# Hourly check of the GazeFix installer list (free tier: Worker + Cron Trigger + KV).
+# Hourly check of the signed GazeFix manifest (free tier: Worker + Cron Trigger + KV).
 # SLACK_WEBHOOK_URL is a secret: npx wrangler secret put SLACK_WEBHOOK_URL (never put it in this file).
 name = "gazefix-installer-check"
 main = "src/index.mjs"
@@ -8,7 +8,7 @@ compatibility_date = "2025-09-01"
 crons = ["0 * * * *"]
 
 [vars]
-LIST_URL = "https://updates.thewonderjoy.com/gazefix/sdk/v1/installers.json"
+MANIFEST_URL = "https://updates.thewonderjoy.com/gazefix/manifest/v1/manifest.json"
 
 [[kv_namespaces]]
 binding = "STATE"

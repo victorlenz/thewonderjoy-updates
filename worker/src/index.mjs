@@ -1,6 +1,13 @@
-// Cloudflare Worker: every hour (Cron Trigger) checks the GazeFix installer list and tells Slack when something changes.
-// Bindings (worker/wrangler.toml): LIST_URL (var), STATE (KV), SLACK_WEBHOOK_URL (secret).
+// Cloudflare Worker: every hour (Cron Trigger) checks the signed GazeFix manifest, every download it lists, and the
+// upstream pages, and tells Slack when something changes. Free tier only.
+// Bindings (worker/wrangler.toml): MANIFEST_URL (var), STATE (KV), SLACK_WEBHOOK_URL (secret).
 
+import publicKeys from '../../keys/public-keys.json' with { type: 'json' };
+import {
+  FFMPEG_RELEASE_VERSION_URL,
+  KNOWN_OTHER_INSTALLER_URLS,
+  NVIDIA_PAGE_URL,
+} from '../../shared/upstream-watch.mjs';
 import { decideAlert, sendSlack } from './alerts.mjs';
 import { findProblems } from './checks.mjs';
 
@@ -20,19 +27,29 @@ export default {
 };
 
 async function runHourlyCheck(env) {
-  const problems = await findProblemsOrCrash(env.LIST_URL);
+  const current = await findProblemsOrCrash(env.MANIFEST_URL);
   const previous = await loadState(env.STATE);
-  const { message, nextState } = decideAlert(previous, problems, new Date());
-  console.log(summaryLine(env.LIST_URL, problems, message));
-  if (message !== null) await sendSlack(workerFetch, requireWebhookUrl(env), withListUrl(message, env.LIST_URL));
+  const { message, nextState } = decideAlert(previous, current, new Date());
+  console.log(summaryLine(env.MANIFEST_URL, current, message));
+  if (message !== null) await sendSlack(workerFetch, requireWebhookUrl(env), withManifestUrl(message, env.MANIFEST_URL));
   await env.STATE.put(STATE_KEY, JSON.stringify(nextState));
 }
 
-async function findProblemsOrCrash(listUrl) {
+async function findProblemsOrCrash(manifestUrl) {
   try {
-    return await findProblems({ fetch: workerFetch, listUrl, attempts: ATTEMPTS, retryDelayMs: RETRY_DELAY_MS, sleep });
+    return await findProblems({
+      fetch: workerFetch,
+      manifestUrl,
+      publicKeys,
+      nvidiaPageUrl: NVIDIA_PAGE_URL,
+      ffmpegVersionUrl: FFMPEG_RELEASE_VERSION_URL,
+      knownOtherLinks: KNOWN_OTHER_INSTALLER_URLS,
+      attempts: ATTEMPTS,
+      retryDelayMs: RETRY_DELAY_MS,
+      sleep,
+    });
   } catch (error) {
-    return [`the check itself crashed: ${error.message}`];
+    return { problems: [`the check itself crashed: ${error.message}`], serial: null };
   }
 }
 
@@ -45,13 +62,13 @@ async function loadState(kv) {
   }
 }
 
-function summaryLine(listUrl, problems, message) {
+function summaryLine(manifestUrl, { problems, serial }, message) {
   const slack = message === null ? 'no Slack message' : 'sending Slack message';
-  return `GazeFix installer check of ${listUrl}: ${problems.length} problem(s), ${slack} ${JSON.stringify(problems)}`;
+  return `GazeFix manifest check of ${manifestUrl}: serial ${serial}, ${problems.length} problem(s), ${slack} ${JSON.stringify(problems)}`;
 }
 
-function withListUrl(message, listUrl) {
-  return `${message}\nList: ${listUrl}`;
+function withManifestUrl(message, manifestUrl) {
+  return `${message}\nManifest: ${manifestUrl}`;
 }
 
 function requireWebhookUrl(env) {

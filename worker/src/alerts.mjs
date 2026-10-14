@@ -1,28 +1,64 @@
-// When to tell Slack: only when the set of problems changes, plus a daily reminder while problems remain.
+// When to tell Slack: when the set of problems changes, when a new manifest was published, plus a daily reminder
+// while problems remain. At most one message per run.
 
 export const REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000;
-const MESSAGE_HEADING = 'GazeFix installer check:';
+const MESSAGE_HEADING = 'GazeFix manifest check:';
 
 /**
- * @typedef {{ problems: string[], lastAlertAt: string | null }} CheckState  (stored between runs; ISO time)
+ * @typedef {{ problems: string[], serial: number | null, lastAlertAt: string | null }} CheckState
+ *   stored between runs; lastAlertAt is an ISO time. States saved before serials existed have no `serial`.
+ * @typedef {{ problems: string[], serial: number | null }} CheckResult  what findProblems returns
+ *
  * Decides whether this run sends a Slack message.
+ * - A current serial lower than the stored one adds the problem "serial went backwards: A → B".
  * - previous undefined (first run ever): send only if there are problems.
  * - problems differ from previous.problems (as sets): send. Problems → "broken" message; none → "fixed" message.
  * - same problems, not empty, and now - lastAlertAt ≥ REMINDER_INTERVAL_MS: send a "still broken" reminder.
- * - otherwise: no message.
- * nextState.problems = problems (sorted); nextState.lastAlertAt = now when sending, else previous.lastAlertAt (or null).
- * Messages list every problem on its own line.
+ * - a stored serial that is a number and a higher current serial: "Manifest updated: serial A → B", combined with
+ *   any of the messages above into one.
+ * nextState: problems sorted; serial = the highest seen; lastAlertAt = now when sending, else unchanged.
  * @param {CheckState | undefined} previous
- * @param {string[]} problems
+ * @param {CheckResult} current
  * @param {Date} now
  * @returns {{ message: string | null, nextState: CheckState }}
  */
-export function decideAlert(previous, problems, now) {
-  const sortedProblems = [...problems].sort();
-  const message = messageFor(previous, sortedProblems, now);
+export function decideAlert(previous, current, now) {
+  const storedSerial = isSerial(previous?.serial) ? previous.serial : null;
+  const problems = [...current.problems, ...serialProblems(storedSerial, current.serial)].sort();
+  const problemMessage = messageFor(previous, problems, now);
+  const message = withUpdateNote(problemMessage, updateNote(storedSerial, current.serial));
   const lastAlertAt = message === null ? (previous?.lastAlertAt ?? null) : now.toISOString();
-  return { message, nextState: { problems: sortedProblems, lastAlertAt } };
+  return { message, nextState: { problems, serial: highestSerial(storedSerial, current.serial), lastAlertAt } };
 }
+
+// ---- Serial -----------------------------------------------------------------------------------
+
+function serialProblems(storedSerial, currentSerial) {
+  if (!isSerial(storedSerial) || !isSerial(currentSerial) || currentSerial >= storedSerial) return [];
+  return [`serial went backwards: ${storedSerial} → ${currentSerial}`];
+}
+
+function updateNote(storedSerial, currentSerial) {
+  if (!isSerial(storedSerial) || !isSerial(currentSerial) || currentSerial <= storedSerial) return null;
+  return `Manifest updated: serial ${storedSerial} → ${currentSerial}`;
+}
+
+function highestSerial(storedSerial, currentSerial) {
+  const known = [storedSerial, currentSerial].filter(isSerial);
+  return known.length > 0 ? Math.max(...known) : null;
+}
+
+function isSerial(value) {
+  return typeof value === 'number';
+}
+
+function withUpdateNote(problemMessage, note) {
+  if (note === null) return problemMessage;
+  if (problemMessage === null) return `${MESSAGE_HEADING} ${note}`;
+  return `${problemMessage}\n${note}`;
+}
+
+// ---- Problems ---------------------------------------------------------------------------------
 
 function messageFor(previous, problems, now) {
   const hasProblems = problems.length > 0;
@@ -60,6 +96,8 @@ function fixedMessage() {
 function bulleted(problems) {
   return problems.map((problem) => `• ${problem}`);
 }
+
+// ---- Slack ------------------------------------------------------------------------------------
 
 /**
  * Posts {"text": text} as JSON to the Slack incoming-webhook URL. Throws when Slack does not answer 2xx,
