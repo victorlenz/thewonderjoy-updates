@@ -1,16 +1,13 @@
 // Run with: node --test scripts/check-links.test.mjs
+// Criteria: C1, C4, C5 of D:\Work\specs\updates-signed-manifest.md. The manifest rules themselves are tested once,
+// in shared/manifest.test.mjs; here only what check-links adds.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
-import {
-  exitCodeFor,
-  extractInstallerLinks,
-  findNewLinks,
-  parseKnownLinks,
-  totalFromContentRange,
-  validateList,
-} from './check-links.mjs';
+import { readEnvelope } from '../shared/manifest.mjs';
+import { REAL_PUBLIC_KEYS } from '../test-support/manifest-fixtures.mjs';
+import { exitCodeFor, extractInstallerLinks, findNewLinks, totalFromContentRange } from './check-links.mjs';
 
 const AR_BASE = 'https://international.download.nvidia.com/Windows/broadcast/sdk/AR/';
 const LISTED = `${AR_BASE}nvidia_ar_sdk_installer_v0.8.7_ada.exe`;
@@ -25,98 +22,49 @@ const SAMPLE_PAGE = `
   <a href="https://example.com/other_tool.exe">Not an AR SDK installer</a>
   <a href="${AR_BASE}nvidia_ar_sdk_installer_v0.9.0_ada.zip">Not an exe</a>`;
 
-function validInstaller(overrides = {}) {
-  return {
-    architecture: 'ada',
-    sdkVersion: '0.8.7',
-    url: LISTED,
-    sizeBytes: 1330863768,
-    sha256: '0e2e1110065ed58b9c4a844c674fe5f50ed5fe37a0d170bd229a4bbc48861ca5',
-    md5: 'd14abd6c8f4b9246e4082d84f8e1895e',
-    ...overrides,
-  };
-}
+// ---- C1: the committed signed manifest --------------------------------------------------------
 
-function errorsFor(installerOverrides) {
-  return validateList({ format: 1, installers: [validInstaller(installerOverrides)] });
-}
+test('C1: the committed site manifest verifies with keys/public-keys.json and passes every rule', async () => {
+  const text = await readFile(new URL('../site/gazefix/manifest/v1/manifest.json', import.meta.url), 'utf8');
+  const result = await readEnvelope(text, REAL_PUBLIC_KEYS);
+  assert.equal(result.errors, undefined, JSON.stringify(result.errors));
+  assert.ok(result.serial >= 1);
+});
 
-test('extraction finds each AR SDK installer link once, in page order', () => {
+test('C4/C5: the installer urls of the committed manifest count as known on the NVIDIA page', async () => {
+  const text = await readFile(new URL('../site/gazefix/manifest/v1/manifest.json', import.meta.url), 'utf8');
+  const { manifest } = await readEnvelope(text, REAL_PUBLIC_KEYS);
+  const manifestUrls = manifest.nvidiaArSdk.installers.flatMap((installer) => installer.urls);
+  assert.deepEqual(findNewLinks(extractInstallerLinks(SAMPLE_PAGE), [...manifestUrls, KNOWN_OTHER]), [BRAND_NEW]);
+});
+
+// ---- C4: NVIDIA page watch (pure parts) -------------------------------------------------------
+
+test('C4: extraction finds each AR SDK installer link once, in page order', () => {
   assert.deepEqual(extractInstallerLinks(SAMPLE_PAGE), [LISTED, KNOWN_OTHER, BRAND_NEW]);
 });
 
-test('only links that are neither listed nor known are new', () => {
+test('C4: only links that are neither in the manifest nor known are new', () => {
   const pageLinks = extractInstallerLinks(SAMPLE_PAGE);
   assert.deepEqual(findNewLinks(pageLinks, [LISTED, KNOWN_OTHER]), [BRAND_NEW]);
 });
 
-test('link comparison ignores http/https and letter case', () => {
+test('C4: link comparison ignores http/https and letter case', () => {
   const pageLink = LISTED.replace('https://', 'http://').toUpperCase();
   assert.deepEqual(findNewLinks([pageLink], [LISTED]), []);
 });
 
-test('known-links file skips comments and blank lines', () => {
-  const text = `# why this is here\n${KNOWN_OTHER}  # trailing note\n\n   \n${BRAND_NEW}\r\n`;
-  assert.deepEqual(parseKnownLinks(text), [KNOWN_OTHER, BRAND_NEW]);
-});
+// ---- C2: size from a ranged GET ---------------------------------------------------------------
 
-test('the committed list is valid', async () => {
-  const text = await readFile(new URL('../site/gazefix/sdk/v1/installers.json', import.meta.url), 'utf8');
-  assert.deepEqual(validateList(JSON.parse(text)), []);
-});
-
-test('a valid list has no errors', () => {
-  assert.deepEqual(errorsFor({}), []);
-});
-
-test('format other than 1 is rejected', () => {
-  assert.equal(validateList({ format: 2, installers: [validInstaller()] }).length, 1);
-});
-
-test('unknown architecture is rejected', () => {
-  assert.equal(errorsFor({ architecture: 'pascal' }).length, 1);
-});
-
-test('non-https, non-nvidia and look-alike hosts are rejected', () => {
-  assert.notDeepEqual(errorsFor({ url: LISTED.replace('https:', 'http:') }), []);
-  assert.notDeepEqual(errorsFor({ url: 'https://example.com/nvidia_ar_sdk_installer_v0.8.7_ada.exe' }), []);
-  assert.notDeepEqual(errorsFor({ url: 'https://evilnvidia.com/nvidia_ar_sdk_installer_v0.8.7_ada.exe' }), []);
-  assert.notDeepEqual(errorsFor({ url: 'nvidia_ar_sdk_installer_v0.8.7_ada.exe' }), []);
-});
-
-test('nvidia.com itself and its subdomains are accepted', () => {
-  assert.deepEqual(errorsFor({ url: 'https://nvidia.com/a/installer.exe' }), []);
-  assert.deepEqual(errorsFor({ url: 'https://download.nvidia.com/a/installer.exe' }), []);
-});
-
-test('unsafe or non-exe file names are rejected', () => {
-  assert.notDeepEqual(errorsFor({ url: `${AR_BASE}installer.zip` }), []);
-  assert.notDeepEqual(errorsFor({ url: `${AR_BASE}my%20installer.exe` }), []);
-});
-
-test('sizeBytes must be a positive whole number', () => {
-  for (const sizeBytes of [0, -1, 1.5, '100', null]) {
-    assert.equal(errorsFor({ sizeBytes }).length, 1, `sizeBytes ${JSON.stringify(sizeBytes)}`);
-  }
-});
-
-test('sha256 must be 64 lowercase hex characters', () => {
-  assert.equal(errorsFor({ sha256: 'abc' }).length, 1);
-  assert.equal(errorsFor({ sha256: 'g'.repeat(64) }).length, 1);
-});
-
-test('duplicate architectures are rejected', () => {
-  const errors = validateList({ format: 1, installers: [validInstaller(), validInstaller()] });
-  assert.equal(errors.length, 1);
-});
-
-test('total size is read from Content-Range', () => {
+test('C2: total size is read from Content-Range', () => {
   assert.equal(totalFromContentRange('bytes 0-0/1324834184'), '1324834184');
   assert.equal(totalFromContentRange('bytes 0-0/*'), undefined);
   assert.equal(totalFromContentRange(null), undefined);
 });
 
-test('exit code: broken beats new links, new links alone give 2', () => {
+// ---- exit codes -------------------------------------------------------------------------------
+
+test('C4: exit code: broken beats new links, new links alone give 2', () => {
   assert.equal(exitCodeFor({ failures: ['x'], newLinks: ['y'] }), 1);
   assert.equal(exitCodeFor({ failures: [], newLinks: ['y'] }), 2);
   assert.equal(exitCodeFor({ failures: [], newLinks: [] }), 0);
