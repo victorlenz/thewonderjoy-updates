@@ -1,0 +1,6 @@
+/gazefix/*
+  Cache-Control: public, max-age=300
+  X-Content-Type-Options: nosniff
+
+/gazefix/sdk/v1/installers.json
+  Content-Type: application/json; charset=utf-8

@@ -1,0 +1,12 @@
+# Installer links on https://www.nvidia.com/broadcast-sdk-resources that GazeFix deliberately does not use.
+# The daily check reports any installer link on that page that is neither here nor in an installers.json.
+# One URL per line. Text after # is a comment.
+
+# Older SDK 0.8.2 (Ada). GazeFix uses 0.8.7, which NVIDIA publishes for all four architectures.
+https://international.download.nvidia.com/Windows/broadcast/sdk/AR/nvidia_ar_sdk_installer_v0.8.2_ada.exe
+# Older SDK 0.8.2 (Ampere). GazeFix uses 0.8.7 instead.
+https://international.download.nvidia.com/Windows/broadcast/sdk/AR/nvidia_ar_sdk_installer_v0.8.2_ampere.exe
+# Older SDK 0.8.2 (Turing). GazeFix uses 0.8.7 instead.
+https://international.download.nvidia.com/Windows/broadcast/sdk/AR/nvidia_ar_sdk_installer_v0.8.2_turing.exe
+# AR 1.2.0.0, labelled "For NVIDIA RTX Spark Series" on the page; not for the desktop GPUs GazeFix targets.
+https://international.download.nvidia.com/Windows/broadcast/sdk/AR/nvidia_ar_sdk_installer_rtx_spark_v1.2.0.0.exe

@@ -1,0 +1,125 @@
+name: Check installer links
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # daily quick check (sizes only)
+    - cron: "0 7 * * 1"   # weekly full check (downloads and hash-checks every installer)
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "scripts/**"
+      - ".github/workflows/check-links.yml"
+  pull_request:
+    paths:
+      - "site/**"
+      - "scripts/**"
+      - ".github/workflows/check-links.yml"
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Download every installer and check its SHA-256 (about 5.3 GB)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: check-links
+  cancel-in-progress: false
+
+env:
+  WEEKLY_FULL_CRON: "0 7 * * 1"
+  BROKEN_TITLE: "Installer links are broken"
+  BROKEN_LABEL: "link-check"
+  NEW_TITLE: "NVIDIA published installers we don't list"
+  NEW_LABEL: "new-installer"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Unit tests
+        run: node --test scripts/check-links.test.mjs
+
+      - name: Check links
+        id: check
+        env:
+          REPORT_PATH: ${{ runner.temp }}/report.md
+          # A changed list (push / pull request) must be proven by downloading and hashing it.
+          FULL: >-
+            ${{ github.event_name == 'push'
+             || github.event_name == 'pull_request'
+             || (github.event_name == 'schedule' && github.event.schedule == env.WEEKLY_FULL_CRON)
+             || (github.event_name == 'workflow_dispatch' && inputs.full) }}
+          LIVE_CHECK: ${{ vars.LIVE_CHECK }}
+        run: |
+          args=()
+          if [ "$FULL" = "true" ]; then args+=(--full); fi
+          if [ "$LIVE_CHECK" != "true" ]; then args+=(--skip-live); fi
+          set +e
+          node scripts/check-links.mjs "${args[@]}"
+          code=$?
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          if [ ! -s "$REPORT_PATH" ]; then
+            echo "The link check stopped before writing a report (exit code $code). See the workflow log." > "$REPORT_PATH"
+          fi
+          cat "$REPORT_PATH" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update issues
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EXIT_CODE: ${{ steps.check.outputs.exit_code }}
+          REPORT_PATH: ${{ runner.temp }}/report.md
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          open_issue_number() { # label title
+            gh issue list --state open --label "$1" --limit 50 --json number,title \
+              --jq "map(select(.title == \"$2\")) | .[0].number // empty"
+          }
+
+          report_or_update() { # label title
+            gh label create "$1" --force >/dev/null
+            body="$(cat "$REPORT_PATH")"$'\n\n'"Run: $RUN_URL"
+            number="$(open_issue_number "$1" "$2")"
+            if [ -n "$number" ]; then
+              gh issue comment "$number" --body "$body"
+            else
+              gh issue create --title "$2" --label "$1" --body "$body"
+            fi
+          }
+
+          close_if_open() { # label title
+            number="$(open_issue_number "$1" "$2")"
+            if [ -n "$number" ]; then
+              gh issue close "$number" --comment "All installer links are fine again. Run: $RUN_URL"
+            fi
+          }
+
+          case "$EXIT_CODE" in
+            1) report_or_update "$BROKEN_LABEL" "$BROKEN_TITLE" ;;
+            2) close_if_open "$BROKEN_LABEL" "$BROKEN_TITLE"
+               report_or_update "$NEW_LABEL" "$NEW_TITLE" ;;
+            0) close_if_open "$BROKEN_LABEL" "$BROKEN_TITLE" ;;
+            *) echo "Unexpected exit code: $EXIT_CODE"; exit 1 ;;
+          esac
+
+      - name: Fail the job when links are broken
+        if: steps.check.outputs.exit_code == '1'
+        run: |
+          echo "::error::Installer links are broken. See the report in the job summary."
+          exit 1

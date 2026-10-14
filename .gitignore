@@ -1,0 +1,4 @@
+node_modules/
+report.md
+*.report.md
+link-report*.md
