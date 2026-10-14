@@ -85,7 +85,7 @@ NVIDIA installers (`nvidiaArSdk.installers`):
 - `md5`: 32 lowercase hex characters (NVIDIA's download server sends it in its ETag; used by the hourly check only).
 
 FFmpeg (`ffmpeg`):
-- `version`: matches `^[0-9A-Za-z.-]{1,40}$` (used in the install folder name).
+- `version`: matches `^[0-9A-Za-z.-]{1,40}$` and does not contain `..` (used in the install folder name).
 - `ffmpegExe`, `ffprobeExe`, `licenseFile`: relative paths inside the zip, `/`-separated, no `..`, no leading `/`,
   no `\`, no `:`.
 
