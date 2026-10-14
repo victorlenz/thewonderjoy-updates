@@ -32,13 +32,13 @@ passes section 3. Otherwise the whole file is ignored (the app keeps using the l
 
 ## 2. The manifest (what is signed)
 
-```json
+```jsonc
 {
   "format": 1,
   "serial": 1,
   "publishedAt": "2026-10-14T09:00:00Z",
   "nvidiaArSdk": {
-    "installers": [
+    "installers": [   // shortened here: a real manifest lists turing, ampere, ada and blackwell
       {
         "architecture": "blackwell",
         "sdkVersion": "0.8.7",
